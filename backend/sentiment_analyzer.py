@@ -4,9 +4,7 @@ import time
 print("Initializing sentiment analysis pipeline...")
 start_time = time.time()
 
-
 try:
-    
     sentiment_pipeline = pipeline(
         "sentiment-analysis",
         model="finiteautomata/bertweet-base-sentiment-analysis",
@@ -14,7 +12,6 @@ try:
     )
     end_time = time.time()
     print(f"Sentiment analysis pipeline loaded successfully in {end_time - start_time:.2f} seconds.")
-
     
     try:
         test_output = sentiment_pipeline("This is a test sentence.")
@@ -29,27 +26,14 @@ except Exception as e:
     
     sentiment_pipeline = None
 
-
 def analyze_sentiment(text):
-    """
-    Analyzes the sentiment of a given text using the pre-loaded pipeline.
-
-    Args:
-        text (str): The text (e.g., news headline) to analyze.
-
-    Returns:
-        str: The sentiment label ('POSITIVE', 'NEGATIVE', 'NEUTRAL')
-             or 'UNKNOWN' if analysis fails or the pipeline isn't loaded.
-    """
     if not sentiment_pipeline:
         return "UNKNOWN" 
 
-    
     if not text or not isinstance(text, str):
         return "NEUTRAL" 
 
     try:
-       
         result = sentiment_pipeline(text)
 
         if result and isinstance(result, list) and 'label' in result[0]:
@@ -72,24 +56,12 @@ def analyze_sentiment(text):
         print(f"Error during sentiment analysis for text '{text[:50]}...': {e}")
         return "UNKNOWN" 
 
-
 def analyze_sentiment_batch(texts):
-    """
-    Analyzes sentiment for a list of texts using batch processing (more efficient).
-
-    Args:
-        texts (list): A list of strings (e.g., news headlines) to analyze.
-
-    Returns:
-        list: A list of sentiment labels ('POSITIVE', 'NEGATIVE', 'NEUTRAL', 'UNKNOWN').
-              The order corresponds to the input list. Returns empty list on major errors.
-    """
     if not sentiment_pipeline or not texts:
         return ["UNKNOWN"] * len(texts or [])
 
     results_labels = []
     try:
-        
         results = sentiment_pipeline(texts)
 
         for result in results:

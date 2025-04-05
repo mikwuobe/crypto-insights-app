@@ -1,17 +1,14 @@
-# File: backend/news_fetcher.py
 import requests
 import os
-# Import timezone, time from datetime
+
 from datetime import datetime, timedelta, time, timezone
-# Keep dateutil parser import
+
 from dateutil import parser
 
-# --- Constants ---
 NEWSAPI_BASE_URL = "https://newsapi.org/v2/everything"
 CRYPTO_PANIC_BASE_URL = "https://cryptopanic.com/api/v1/posts/"
 DEFAULT_HOURS_AGO = 24
 
-# --- Helper Functions ---
 def get_api_key(key_name):
     """Safely retrieves an API key from environment variables."""
     api_key = os.getenv(key_name)
@@ -25,7 +22,7 @@ def standardize_article(title, source, url, published_at_str, image_url=None):
         return None
     try:
         published_dt = parser.parse(published_at_str)
-        # Ensure timezone is UTC if naive, or convert if aware
+        
         if published_dt.tzinfo is None or published_dt.tzinfo.utcoffset(published_dt) is None:
              published_dt = published_dt.replace(tzinfo=timezone.utc) # Assign UTC if naive
         else:
@@ -38,12 +35,10 @@ def standardize_article(title, source, url, published_at_str, image_url=None):
         'title': title.strip() if title else "No Title",
         'source': source.strip() if source else "Unknown Source",
         'url': url,
-        'published_at': published_iso, # Standardized ISO 8601 UTC format
+        'published_at': published_iso, 
         'image_url': image_url
     }
 
-# --- NewsAPI.org Fetcher ---
-# (Keep existing fetch_crypto_news_newsapi implementation - unchanged from previous version)
 def fetch_crypto_news_newsapi(hours_ago=DEFAULT_HOURS_AGO, from_date_str=None, to_date_str=None):
     """Fetches cryptocurrency news from NewsAPI.org, using date range if provided."""
     print("Attempting to fetch from NewsAPI.org...")
@@ -60,11 +55,11 @@ def fetch_crypto_news_newsapi(hours_ago=DEFAULT_HOURS_AGO, from_date_str=None, t
         params['from'] = from_date_str
         print(f"NewsAPI using start date: {from_date_str}")
     elif hours_ago is not None:
-        from_time_dt = datetime.now(timezone.utc) - timedelta(hours=hours_ago) # Use timezone.utc
+        from_time_dt = datetime.now(timezone.utc) - timedelta(hours=hours_ago) 
         params['from'] = from_time_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
         print(f"NewsAPI using hours ago: {hours_ago} (from {params['from']})")
     else:
-        from_time_dt = datetime.now(timezone.utc) - timedelta(hours=DEFAULT_HOURS_AGO) # Use timezone.utc
+        from_time_dt = datetime.now(timezone.utc) - timedelta(hours=DEFAULT_HOURS_AGO) 
         params['from'] = from_time_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
         print(f"NewsAPI defaulting to last {DEFAULT_HOURS_AGO} hours.")
 
@@ -87,9 +82,6 @@ def fetch_crypto_news_newsapi(hours_ago=DEFAULT_HOURS_AGO, from_date_str=None, t
     print(f"Fetched {len(articles_list)} articles from NewsAPI.")
     return articles_list
 
-
-# --- CryptoPanic Fetcher ---
-# (Keep existing fetch_crypto_news_cryptopanic implementation - unchanged)
 def fetch_crypto_news_cryptopanic():
     """Fetches recent cryptocurrency news from CryptoPanic API."""
     print("Attempting to fetch from CryptoPanic...")
@@ -114,49 +106,41 @@ def fetch_crypto_news_cryptopanic():
     print(f"Fetched {len(articles_list)} articles from CryptoPanic.")
     return articles_list
 
-
-# --- Aggregator Function --- << CORRECTED date parsing >>
 def fetch_all_crypto_news(hours_ago=DEFAULT_HOURS_AGO, from_date=None, to_date=None):
     """ Fetches news, passing dates to supported APIs and filtering others manually. """
     print(f"\nFetching all news - Dates: {from_date} to {to_date}, Fallback Hours: {hours_ago}")
 
-    # Call individual fetchers
     newsapi_articles = fetch_crypto_news_newsapi(hours_ago=hours_ago, from_date_str=from_date, to_date_str=to_date)
     cryptopanic_articles = fetch_crypto_news_cryptopanic()
 
-    # Combine results
     all_raw_articles = newsapi_articles + cryptopanic_articles
 
-    # Post-fetch Date Filtering
     filtered_by_date_articles = []
     start_dt = None
     end_dt = None
 
-    # Parse start/end date strings using timezone.utc
     if from_date:
          try:
-             # Start of the specified day, UTC
-             start_dt = datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=timezone.utc) # <-- Use timezone.utc
+             
+             start_dt = datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=timezone.utc) 
          except ValueError: print(f"Invalid from_date format: {from_date}")
     if to_date:
          try:
-             # End of the specified day (inclusive), UTC
+             
              end_dt = datetime.combine(
                  datetime.strptime(to_date, '%Y-%m-%d'),
-                 time.max # Max time for the day
-             ).replace(tzinfo=timezone.utc) # <-- Use timezone.utc
+                 time.max 
+             ).replace(tzinfo=timezone.utc) 
          except ValueError: print(f"Invalid to_date format: {to_date}")
 
-    # Apply post-fetch filter if dates were parsed
     if start_dt or end_dt:
          print(f"Applying post-fetch date filter: Start={start_dt}, End={end_dt}")
          for article in all_raw_articles:
              try:
-                 # Standardize_article should have already made this UTC and ISO format
-                 # Parsing it again gives us a comparable datetime object
-                 article_dt = parser.parse(article['published_at']) # Already UTC
+                 
+                 article_dt = parser.parse(article['published_at']) 
 
-                 # Apply filter logic
+                 
                  date_match = True
                  if start_dt and article_dt < start_dt: date_match = False
                  if end_dt and article_dt > end_dt: date_match = False
@@ -168,10 +152,10 @@ def fetch_all_crypto_news(hours_ago=DEFAULT_HOURS_AGO, from_date=None, to_date=N
                  print(f"Skipping article during date filter due to parse error: {article.get('published_at')}, {e}")
          print(f"Articles after post-fetch date filtering: {len(filtered_by_date_articles)}")
     else:
-         # No date filtering needed, use all fetched articles
+         
          filtered_by_date_articles = all_raw_articles
 
-    # De-duplicate (Apply to the date-filtered list)
+    
     print(f"\nTotal articles before de-duplication: {len(filtered_by_date_articles)}")
     unique_articles = {}
     for article in filtered_by_date_articles:
@@ -183,14 +167,13 @@ def fetch_all_crypto_news(hours_ago=DEFAULT_HOURS_AGO, from_date=None, to_date=N
     deduplicated_list = list(unique_articles.values())
     print(f"Total articles after de-duplication: {len(deduplicated_list)}")
 
-    # Sort by published date
+    
     try:
         sorted_articles = sorted(deduplicated_list, key=lambda x: x['published_at'], reverse=True)
     except Exception as e: print(f"Error sorting articles: {e}"); sorted_articles = deduplicated_list
     print(f"Final sorted article count: {len(sorted_articles)}")
     return sorted_articles
 
-# --- Example usage (Keep existing) ---
 if __name__ == '__main__':
     print("Testing fetch_all_crypto_news...")
     from dotenv import load_dotenv
