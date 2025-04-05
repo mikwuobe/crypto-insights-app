@@ -1,0 +1,17 @@
+venv/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.env
+
+*.sqlite3
+*.db
+
+.cache
+.pytest_cache/
+.mypy_cache/
+
+.DS_Store
