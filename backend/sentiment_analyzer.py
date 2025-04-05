@@ -1,113 +1,123 @@
-from transformers import pipeline
-import time 
+import requests
+import os
+import time
 
-print("Initializing sentiment analysis pipeline...")
-start_time = time.time()
+MODEL_NAME = "finiteautomata/bertweet-base-sentiment-analysis"
+API_URL = f"https://api-inference.huggingface.co/models/{MODEL_NAME}"
 
-try:
-    sentiment_pipeline = pipeline(
-        "sentiment-analysis",
-        model="finiteautomata/bertweet-base-sentiment-analysis",
-        device=-1 
-    )
-    end_time = time.time()
-    print(f"Sentiment analysis pipeline loaded successfully in {end_time - start_time:.2f} seconds.")
-    
+HF_API_TOKEN = os.getenv("HF_API_TOKEN")
+if not HF_API_TOKEN:
+    print("WARNING: Hugging Face API Token (HF_API_TOKEN) not found in environment variables. Sentiment analysis will fail.")
+# --------------------
+
+HEADERS = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+
+def query_hf_api(payload):
+    """Sends data to the Hugging Face Inference API and handles response/errors."""
+    if not HF_API_TOKEN:
+        return None 
+
     try:
-        test_output = sentiment_pipeline("This is a test sentence.")
-        print(f"Pipeline test output format: {test_output}")
-       
-    except Exception as e:
-        print(f"Could not perform pipeline test: {e}")
+        response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=20) 
 
-except Exception as e:
-    print(f"ERROR: Failed to load sentiment analysis pipeline: {e}")
-    print("Sentiment analysis will not be available.")
-    
-    sentiment_pipeline = None
+        if response.status_code == 429:
+            print("Hugging Face API rate limit hit. Try again later.")
+            return None
+        if response.status_code == 503:
+            
+            wait_time = response.headers.get("Retry-After")
+            print(f"Model potentially loading, retrying after {wait_time or 5} sec...")
+            time.sleep(float(wait_time or 5))
+            response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=20)
+            print(f"Retry status: {response.status_code}")
+
+        response.raise_for_status() 
+        # ----------------------------------------------
+
+        return response.json()
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error querying Hugging Face API: {e}")
+        return None
+    except Exception as e:
+         print(f"An unexpected error occurred during HF API query: {e}")
+         return None
+
+def map_label(raw_label):
+    """Maps HF API labels ('POS', 'NEG', 'NEU') to standard labels."""
+    if raw_label == "POS": return "POSITIVE"
+    if raw_label == "NEG": return "NEGATIVE"
+    if raw_label == "NEU": return "NEUTRAL"
+    print(f"Warning: Unknown sentiment label encountered from API: {raw_label}")
+    return "NEUTRAL" 
+
 
 def analyze_sentiment(text):
-    if not sentiment_pipeline:
-        return "UNKNOWN" 
-
+    """Analyzes sentiment of a single text string using HF Inference API."""
     if not text or not isinstance(text, str):
         return "NEUTRAL" 
 
+    payload = {"inputs": text}
+    api_response = query_hf_api(payload)
+
     try:
-        result = sentiment_pipeline(text)
-
-        if result and isinstance(result, list) and 'label' in result[0]:
-            raw_label = result[0]['label']
-          
-            if raw_label == "POS":
-                return "POSITIVE"
-            elif raw_label == "NEG":
-                return "NEGATIVE"
-            elif raw_label == "NEU":
-                return "NEUTRAL"
-            else:
-                print(f"Warning: Unknown sentiment label encountered: {raw_label}")
-                return "NEUTRAL" 
+        if api_response and isinstance(api_response, list) and api_response[0] and isinstance(api_response[0], list) and api_response[0][0]:
+            raw_label = api_response[0][0].get('label')
+            return map_label(raw_label)
         else:
-            print(f"Warning: Unexpected result format from pipeline for text: {text[:50]}...")
-            return "UNKNOWN"
+             print(f"Warning: Unexpected API response format for single text '{text[:50]}...': {api_response}")
+             return "UNKNOWN"
+    except (IndexError, KeyError, TypeError) as e:
+        print(f"Error parsing single API response for '{text[:50]}...': {e}, Response: {api_response}")
+        return "UNKNOWN"
 
-    except Exception as e:
-        print(f"Error during sentiment analysis for text '{text[:50]}...': {e}")
-        return "UNKNOWN" 
 
 def analyze_sentiment_batch(texts):
-    if not sentiment_pipeline or not texts:
-        return ["UNKNOWN"] * len(texts or [])
+    """Analyzes sentiment for a list of texts using HF Inference API."""
+    if not texts or not isinstance(texts, list):
+        return ["NEUTRAL"] * len(texts or [])
 
-    results_labels = []
+    valid_texts = [str(t) for t in texts if t and isinstance(t, str)]
+    if not valid_texts:
+         
+         return ["NEUTRAL"] * len(texts)
+
+    payload = {"inputs": valid_texts}
+    api_response = query_hf_api(payload)
+    results_map = {} 
+
     try:
-        results = sentiment_pipeline(texts)
+        if api_response and isinstance(api_response, list) and len(api_response) == len(valid_texts):
+            for i, result_list in enumerate(api_response):
+                if result_list and isinstance(result_list, list) and result_list[0]:
+                     raw_label = result_list[0].get('label')
+                     results_map[valid_texts[i]] = map_label(raw_label) 
+                else:
+                    print(f"Warning: Unexpected item format in batch response for '{valid_texts[i][:50]}...': {result_list}")
+                    results_map[valid_texts[i]] = "UNKNOWN"
+        else:
+            print(f"Warning: Unexpected API response format or length mismatch for batch: {api_response}")
+            
+            for text in valid_texts: results_map[text] = "UNKNOWN"
 
-        for result in results:
-             if result and isinstance(result, dict) and 'label' in result:
-                 raw_label = result['label']
-                 if raw_label == "POS":
-                     results_labels.append("POSITIVE")
-                 elif raw_label == "NEG":
-                     results_labels.append("NEGATIVE")
-                 elif raw_label == "NEU":
-                     results_labels.append("NEUTRAL")
-                 else:
-                     print(f"Warning: Unknown sentiment label encountered in batch: {raw_label}")
-                     results_labels.append("NEUTRAL")
-             else:
-                 print(f"Warning: Unexpected result format from pipeline in batch.")
-                 results_labels.append("UNKNOWN")
+    except (IndexError, KeyError, TypeError) as e:
+        print(f"Error parsing batch API response: {e}, Response: {api_response}")
+        for text in valid_texts: results_map[text] = "UNKNOWN"
 
-    except Exception as e:
-        print(f"Error during batch sentiment analysis: {e}")
-        
-        return ["UNKNOWN"] * len(texts)
-
-    return results_labels
+    final_sentiments = [results_map.get(str(t), "NEUTRAL") for t in texts] 
+    return final_sentiments
 
 if __name__ == '__main__':
-    if sentiment_pipeline:
-        print("\nTesting analyze_sentiment:")
-        test_headline = "Bitcoin price surges above $70,000!"
+    print("Testing Sentiment Analyzer with Hugging Face API...")
+    
+    if not HF_API_TOKEN:
+         print("Please set the HF_API_TOKEN environment variable for testing.")
+    else:
+        test_headline = "Bitcoin price surges!"
         sentiment = analyze_sentiment(test_headline)
         print(f"'{test_headline}' -> Sentiment: {sentiment}")
 
-        test_headline_neg = "Crypto market crashes after regulatory concerns."
-        sentiment_neg = analyze_sentiment(test_headline_neg)
-        print(f"'{test_headline_neg}' -> Sentiment: {sentiment_neg}")
-
-        print("\nTesting analyze_sentiment_batch:")
-        headlines = [
-            "Ethereum upgrade successful, gas fees drop.",
-            "New NFT project rug pulls investors.",
-            "Stablecoin reserves remain fully backed.",
-            "", 
-            None 
-        ]
+        headlines = ["Ethereum upgrade successful.", "Market crashes.", "Stablecoin okay.", "", None]
         sentiments = analyze_sentiment_batch(headlines)
         for h, s in zip(headlines, sentiments):
-            print(f"'{h}' -> Sentiment: {s}")
-    else:
-        print("Skipping direct execution tests as pipeline failed to load.")
+             print(f"'{h}' -> Sentiment: {s}")
