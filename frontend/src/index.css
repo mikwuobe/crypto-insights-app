@@ -1,68 +1,102 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --background-color: #f8f9fa; 
+  --text-color: #212529;
+  --card-bg: #ffffff;
+  --link-color: #0d6efd;
+  --link-hover-color: #0a58ca;
+  --border-color: #dee2e6;
+  --secondary-bg-subtle: #e9ecef;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+body[data-bs-theme="dark"] {
+  --background-color: #212529;
+  --text-color: #dee2e6;
+  --card-bg: #343a40;
+  --link-color: #6ea8fe;
+  --link-hover-color: #8ab4f8;
+  --border-color: #495057;
+  --secondary-bg-subtle: #343a40; 
+
+  background-color: var(--bs-body-bg);
+  color: var(--bs-body-color);
 }
 
 body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  transition: background-color 0.2s linear, color 0.2s linear;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+a {
+  color: var(--link-color);
+  transition: color 0.2s ease-in-out;
+}
+a:hover {
+   color: var(--link-hover-color);
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
+.list-group-item {
+    transition: background-color 0.2s ease;
 }
-button:hover {
-  border-color: #646cff;
+body[data-bs-theme="light"] .list-group-item-action:hover {
+    background-color: #f1f3f5;
 }
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+ body[data-bs-theme="dark"] .list-group-item-action:hover {
+    background-color: #495057;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+.filter-section {
+  background-color: var(--secondary-bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 1rem;
+  transition: background-color 0.2s linear, border-color 0.2s linear;
+}
+
+.react-datepicker-wrapper {
+    width: 100%;
+}
+.react-datepicker__input-container input {
+    width: 100% !important; 
+}
+
+body[data-bs-theme="dark"] .react-datepicker {
+    background-color: #343a40;
+    border-color: var(--border-color);
+    color: var(--text-color);
+}
+body[data-bs-theme="dark"] .react-datepicker__header {
+    background-color: #495057;
+    border-bottom-color: var(--border-color);
+}
+body[data-bs-theme="dark"] .react-datepicker__current-month,
+body[data-bs-theme="dark"] .react-datepicker__day-name,
+body[data-bs-theme="dark"] .react-datepicker__day {
+    color: var(--text-color);
+}
+ body[data-bs-theme="dark"] .react-datepicker__day:hover {
+     background-color: #6c757d;
+ }
+ body[data-bs-theme="dark"] .react-datepicker__day--selected,
+ body[data-bs-theme="dark"] .react-datepicker__day--in-selecting-range,
+ body[data-bs-theme="dark"] .react-datepicker__day--in-range {
+     background-color: var(--bs-primary);
+     color: #fff;
+ }
+  body[data-bs-theme="dark"] .react-datepicker__day--disabled {
+      color: #6c757d;
   }
-  a:hover {
-    color: #747bff;
+  body[data-bs-theme="dark"] .react-datepicker__navigation-icon::before {
+       border-color: var(--text-color);
   }
-  button {
-    background-color: #f9f9f9;
-  }
+
+*:focus-visible {
+    outline: 2px solid var(--link-color) !important;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25); 
+}
+body[data-bs-theme="dark"] *:focus-visible {
+     outline-color: var(--link-color) !important;
+     box-shadow: 0 0 0 3px rgba(110, 168, 254, 0.35);
 }
