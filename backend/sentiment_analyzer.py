@@ -1,118 +1,128 @@
-import requests
+# File: backend/sentiment_analyzer.py
+from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+import torch
 import os
 import time
 
-MODEL_NAME = "finiteautomata/bertweet-base-sentiment-analysis"
-API_URL = f"https://api-inference.huggingface.co/models/{MODEL_NAME}"
-
-HF_API_TOKEN = os.getenv("HF_API_TOKEN")
-if not HF_API_TOKEN:
-    print("WARNING: Hugging Face API Token (HF_API_TOKEN) not found in environment variables. Sentiment analysis will fail.")
+# --- Configuration ---
+# Path to the directory where your fine-tuned model was saved
+MODEL_PATH = "./models/distilbert-finetuned-financial-sentiment"
 # --------------------
 
-HEADERS = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+# --- Load Local Model Pipeline (ONCE on startup) ---
+print(f"Initializing sentiment analysis pipeline from local path: {MODEL_PATH}")
+start_time = time.time()
+sentiment_pipeline = None # Initialize as None
 
-def query_hf_api(payload):
-    """Sends data to the Hugging Face Inference API and handles response/errors."""
-    if not HF_API_TOKEN:
-        return None 
+try:
+    # Check if model path exists
+    if not os.path.exists(MODEL_PATH):
+         raise OSError(f"Model directory not found at: {MODEL_PATH}. Please ensure training completed successfully.")
 
+    # Determine device (mps for Apple Silicon, cuda for Nvidia, else cpu)
+    device_name = "cpu" # Default to CPU
+    if torch.cuda.is_available():
+        device_name = "cuda"
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available(): # Check MPS availability correctly
+         device_name = "mps"
+    print(f"Attempting to load model on device: {device_name}")
+
+    # Use device index if needed (0 for first GPU usually)
+    device_index = 0 if device_name in ["cuda", "mps"] else -1
+
+    # Load the pipeline using the local path
+    sentiment_pipeline = pipeline(
+        "sentiment-analysis",
+        model=MODEL_PATH,
+        tokenizer=MODEL_PATH, # Load tokenizer from same path
+        device=device_index # Use device index for pipeline
+    )
+    end_time = time.time()
+    print(f"Local sentiment analysis pipeline loaded successfully in {end_time - start_time:.2f} seconds.")
+
+    # Optional: Test pipeline output format
     try:
-        response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=20) 
-
-        if response.status_code == 429:
-            print("Hugging Face API rate limit hit. Try again later.")
-            return None
-        if response.status_code == 503:
-            
-            wait_time = response.headers.get("Retry-After")
-            print(f"Model potentially loading, retrying after {wait_time or 5} sec...")
-            time.sleep(float(wait_time or 5))
-            response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=20)
-            print(f"Retry status: {response.status_code}")
-
-        response.raise_for_status() 
-        # ----------------------------------------------
-
-        return response.json()
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error querying Hugging Face API: {e}")
-        return None
+        test_output = sentiment_pipeline("This is only a test.")
+        print(f"Pipeline test output format: {test_output}")
+        # Expected: [{'label': 'neutral', 'score': 0.9...}] or similar (labels might be upper/lower case)
     except Exception as e:
-         print(f"An unexpected error occurred during HF API query: {e}")
-         return None
+        print(f"Could not perform pipeline test: {e}")
 
-def map_label(raw_label):
-    """Maps HF API labels ('POS', 'NEG', 'NEU') to standard labels."""
-    if raw_label == "POS": return "POSITIVE"
-    if raw_label == "NEG": return "NEGATIVE"
-    if raw_label == "NEU": return "NEUTRAL"
-    print(f"Warning: Unknown sentiment label encountered from API: {raw_label}")
-    return "NEUTRAL" 
+except Exception as e:
+    print(f"ERROR: Failed to load local sentiment analysis pipeline from {MODEL_PATH}: {e}")
+    print("Sentiment analysis will not be available.")
+# --------------------------------------------------
+
+
+def map_label_local(raw_label):
+    """Maps local pipeline labels to standard upper-case labels."""
+    # Local pipeline might output 'positive', 'negative', 'neutral' (lowercase)
+    # We need POSITIVE, NEGATIVE, NEUTRAL to match the rest of the app
+    label_upper = str(raw_label).upper()
+    if label_upper == "POSITIVE": return "POSITIVE"
+    if label_upper == "NEGATIVE": return "NEGATIVE"
+    if label_upper == "NEUTRAL": return "NEUTRAL"
+    print(f"Warning: Unknown sentiment label encountered from local pipeline: {raw_label}")
+    return "NEUTRAL" # Default to neutral
 
 
 def analyze_sentiment(text):
-    """Analyzes sentiment of a single text string using HF Inference API."""
-    if not text or not isinstance(text, str):
-        return "NEUTRAL" 
-
-    payload = {"inputs": text}
-    api_response = query_hf_api(payload)
+    """Analyzes sentiment of a single text string using the local pipeline."""
+    if not sentiment_pipeline: return "UNKNOWN" # Pipeline failed to load
+    if not text or not isinstance(text, str): return "NEUTRAL"
 
     try:
-        if api_response and isinstance(api_response, list) and api_response[0] and isinstance(api_response[0], list) and api_response[0][0]:
-            raw_label = api_response[0][0].get('label')
-            return map_label(raw_label)
+        # Local pipeline usually returns list of dicts, e.g. [{'label': 'neutral', 'score': 0.9...}]
+        result = sentiment_pipeline(text)
+        if result and isinstance(result, list) and result[0] and 'label' in result[0]:
+            raw_label = result[0]['label']
+            return map_label_local(raw_label)
         else:
-             print(f"Warning: Unexpected API response format for single text '{text[:50]}...': {api_response}")
-             return "UNKNOWN"
-    except (IndexError, KeyError, TypeError) as e:
-        print(f"Error parsing single API response for '{text[:50]}...': {e}, Response: {api_response}")
+            print(f"Warning: Unexpected result format from local pipeline for text: {text[:50]}...")
+            return "UNKNOWN"
+    except Exception as e:
+        print(f"Error during local sentiment analysis for text '{text[:50]}...': {e}")
         return "UNKNOWN"
 
 
 def analyze_sentiment_batch(texts):
-    """Analyzes sentiment for a list of texts using HF Inference API."""
-    if not texts or not isinstance(texts, list):
-        return ["NEUTRAL"] * len(texts or [])
+    """Analyzes sentiment for a list of texts using the local pipeline (batch processing)."""
+    if not sentiment_pipeline: return ["UNKNOWN"] * len(texts or [])
+    if not texts or not isinstance(texts, list): return ["NEUTRAL"] * len(texts or [])
 
+    # Filter out empty/invalid items before sending to pipeline
     valid_texts = [str(t) for t in texts if t and isinstance(t, str)]
-    if not valid_texts:
-         
-         return ["NEUTRAL"] * len(texts)
+    if not valid_texts: return ["NEUTRAL"] * len(texts) # Return neutral for original invalid items
 
-    payload = {"inputs": valid_texts}
-    api_response = query_hf_api(payload)
-    results_map = {} 
-
+    results_map = {}
     try:
-        if api_response and isinstance(api_response, list) and len(api_response) == len(valid_texts):
-            for i, result_list in enumerate(api_response):
-                if result_list and isinstance(result_list, list) and result_list[0]:
-                     raw_label = result_list[0].get('label')
-                     results_map[valid_texts[i]] = map_label(raw_label) 
+        # Pipeline handles batching internally
+        results = sentiment_pipeline(valid_texts)
+        # Expected format: [{'label': 'positive', 'score': ...}, {'label': 'negative', ...}]
+        if results and isinstance(results, list) and len(results) == len(valid_texts):
+            for i, result_dict in enumerate(results):
+                if result_dict and 'label' in result_dict:
+                    raw_label = result_dict['label']
+                    results_map[valid_texts[i]] = map_label_local(raw_label)
                 else:
-                    print(f"Warning: Unexpected item format in batch response for '{valid_texts[i][:50]}...': {result_list}")
+                    print(f"Warning: Unexpected item format in batch response for '{valid_texts[i][:50]}...': {result_dict}")
                     results_map[valid_texts[i]] = "UNKNOWN"
         else:
-            print(f"Warning: Unexpected API response format or length mismatch for batch: {api_response}")
-            
+            print(f"Warning: Unexpected local pipeline response format or length mismatch for batch: {results}")
             for text in valid_texts: results_map[text] = "UNKNOWN"
 
-    except (IndexError, KeyError, TypeError) as e:
-        print(f"Error parsing batch API response: {e}, Response: {api_response}")
+    except Exception as e:
+        print(f"Error during local batch sentiment analysis: {e}")
         for text in valid_texts: results_map[text] = "UNKNOWN"
 
-    final_sentiments = [results_map.get(str(t), "NEUTRAL") for t in texts] 
+    # Reconstruct the final list matching the original input 'texts' order
+    final_sentiments = [results_map.get(str(t), "NEUTRAL") for t in texts]
     return final_sentiments
 
+# --- Example Usage (Optional) ---
 if __name__ == '__main__':
-    print("Testing Sentiment Analyzer with Hugging Face API...")
-    
-    if not HF_API_TOKEN:
-         print("Please set the HF_API_TOKEN environment variable for testing.")
-    else:
+    print("\nTesting Sentiment Analyzer with LOCAL model...")
+    if sentiment_pipeline:
         test_headline = "Bitcoin price surges!"
         sentiment = analyze_sentiment(test_headline)
         print(f"'{test_headline}' -> Sentiment: {sentiment}")
@@ -121,3 +131,5 @@ if __name__ == '__main__':
         sentiments = analyze_sentiment_batch(headlines)
         for h, s in zip(headlines, sentiments):
              print(f"'{h}' -> Sentiment: {s}")
+    else:
+        print("Skipping direct execution tests as local pipeline failed to load.")
